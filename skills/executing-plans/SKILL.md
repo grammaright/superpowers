@@ -7,7 +7,7 @@ description: Use when you have a written implementation plan to execute in a sep
 
 ## Overview
 
-Load plan, review critically, execute all tasks, report when complete.
+Load plan, review critically, execute all tasks with a per-task audit gate, then finish.
 
 **Announce at start:** "I'm using the executing-plans skill to implement this plan."
 
@@ -27,7 +27,8 @@ For each task:
 1. Mark as in_progress
 2. Follow each step exactly (plan has bite-sized steps)
 3. Run verifications as specified
-4. Mark as completed
+4. **Per-task audit gate:** invoke `audit-simple` scoped to the changes from this task. If it returns critical findings, fix them and re-run `audit-simple` until clean.
+5. Mark as completed.
 
 ### Step 3: Complete Development
 
@@ -58,6 +59,7 @@ After all tasks complete and verified:
 - Review plan critically first
 - Follow plan steps exactly
 - Don't skip verifications
+- Don't skip the per-task audit gate
 - Reference skills when plan says to
 - Stop when blocked, don't guess
 - Never start implementation on main/master branch without explicit user consent
@@ -67,4 +69,5 @@ After all tasks complete and verified:
 **Required workflow skills:**
 - **superpowers:using-git-worktrees** - Ensures isolated workspace (creates one or verifies existing)
 - **superpowers:writing-plans** - Creates the plan this skill executes
+- **audit-simple** - Per-task critical-only audit gate
 - **superpowers:finishing-a-development-branch** - Complete development after all tasks

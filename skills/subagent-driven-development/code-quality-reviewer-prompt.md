@@ -4,10 +4,10 @@ Use this template when dispatching a code quality reviewer subagent.
 
 **Purpose:** Verify implementation is well-built (clean, tested, maintainable)
 
-**Only dispatch after spec compliance review passes.**
+**Required model:** `opus` (always).
 
 ```
-Task tool (general-purpose):
+Task tool (general-purpose, model: "opus"):
   Use template at requesting-code-review/code-reviewer.md
 
   DESCRIPTION: [task summary, from implementer's report]

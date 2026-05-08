@@ -5,13 +5,13 @@ description: Use when executing implementation plans with independent tasks in t
 
 # Subagent-Driven Development
 
-Execute plan by dispatching fresh subagent per task, with two-stage review after each: spec compliance review first, then code quality review.
+Execute plan by dispatching a fresh subagent per task, with **three reviewers in parallel** after each task (spec compliance, code quality, audit-simple) and a **final code review** before finishing — critical findings require user approval.
 
 **Why subagents:** You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.
 
-**Core principle:** Fresh subagent per task + two-stage review (spec then quality) = high quality, fast iteration
+**Core principle:** Fresh subagent per task + parallel three-reviewer gate per task + final code review before finishing = high quality, fast iteration.
 
-**Continuous execution:** Do not pause to check in with your human partner between tasks. Execute all tasks from the plan without stopping. The only reasons to stop are: BLOCKED status you cannot resolve, ambiguity that genuinely prevents progress, or all tasks complete. "Should I continue?" prompts and progress summaries waste their time — they asked you to execute the plan, so execute it.
+**Continuous execution:** Do not pause to check in with your human partner between tasks. Execute all tasks from the plan without stopping. The only reasons to stop are: BLOCKED status you cannot resolve, ambiguity that genuinely prevents progress, all tasks complete, or the final code reviewer surfaced critical issues that need the user's call. "Should I continue?" prompts and progress summaries waste their time — they asked you to execute the plan, so execute it.
 
 ## When to Use
 
@@ -36,7 +36,8 @@ digraph when_to_use {
 **vs. Executing Plans (parallel session):**
 - Same session (no context switch)
 - Fresh subagent per task (no context pollution)
-- Two-stage review after each task: spec compliance first, then code quality
+- Per-task gate runs three reviewers in parallel: spec compliance, code quality, audit-simple
+- Final code review before finishing — critical findings require user approval
 - Faster iteration (no human-in-loop between tasks)
 
 ## The Process
@@ -51,18 +52,17 @@ digraph process {
         "Implementer subagent asks questions?" [shape=diamond];
         "Answer questions, provide context" [shape=box];
         "Implementer subagent implements, tests, commits, self-reviews" [shape=box];
-        "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" [shape=box];
-        "Spec reviewer subagent confirms code matches spec?" [shape=diamond];
-        "Implementer subagent fixes spec gaps" [shape=box];
-        "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" [shape=box];
-        "Code quality reviewer subagent approves?" [shape=diamond];
-        "Implementer subagent fixes quality issues" [shape=box];
+        "Dispatch 3 reviewers IN PARALLEL: spec, code quality, audit-simple" [shape=box];
+        "All reviewers approve?" [shape=diamond];
+        "Implementer subagent fixes failing reviewer's findings" [shape=box];
         "Mark task complete in TodoWrite" [shape=box];
     }
 
     "Read plan, extract all tasks with full text, note context, create TodoWrite" [shape=box];
     "More tasks remain?" [shape=diamond];
     "Dispatch final code reviewer subagent for entire implementation" [shape=box];
+    "Final reviewer verdict?" [shape=diamond];
+    "Surface verdict to user, ASK how to proceed" [shape=box style=filled fillcolor=lightyellow];
     "Use superpowers:finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
 
     "Read plan, extract all tasks with full text, note context, create TodoWrite" -> "Dispatch implementer subagent (./implementer-prompt.md)";
@@ -70,31 +70,55 @@ digraph process {
     "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
     "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
     "Implementer subagent asks questions?" -> "Implementer subagent implements, tests, commits, self-reviews" [label="no"];
-    "Implementer subagent implements, tests, commits, self-reviews" -> "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)";
-    "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" -> "Spec reviewer subagent confirms code matches spec?";
-    "Spec reviewer subagent confirms code matches spec?" -> "Implementer subagent fixes spec gaps" [label="no"];
-    "Implementer subagent fixes spec gaps" -> "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" [label="re-review"];
-    "Spec reviewer subagent confirms code matches spec?" -> "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" [label="yes"];
-    "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" -> "Code quality reviewer subagent approves?";
-    "Code quality reviewer subagent approves?" -> "Implementer subagent fixes quality issues" [label="no"];
-    "Implementer subagent fixes quality issues" -> "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" [label="re-review"];
-    "Code quality reviewer subagent approves?" -> "Mark task complete in TodoWrite" [label="yes"];
+    "Implementer subagent implements, tests, commits, self-reviews" -> "Dispatch 3 reviewers IN PARALLEL: spec, code quality, audit-simple";
+    "Dispatch 3 reviewers IN PARALLEL: spec, code quality, audit-simple" -> "All reviewers approve?";
+    "All reviewers approve?" -> "Implementer subagent fixes failing reviewer's findings" [label="no"];
+    "Implementer subagent fixes failing reviewer's findings" -> "Dispatch 3 reviewers IN PARALLEL: spec, code quality, audit-simple" [label="re-run only failing reviewer"];
+    "All reviewers approve?" -> "Mark task complete in TodoWrite" [label="yes"];
     "Mark task complete in TodoWrite" -> "More tasks remain?";
     "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
     "More tasks remain?" -> "Dispatch final code reviewer subagent for entire implementation" [label="no"];
-    "Dispatch final code reviewer subagent for entire implementation" -> "Use superpowers:finishing-a-development-branch";
+    "Dispatch final code reviewer subagent for entire implementation" -> "Final reviewer verdict?";
+    "Final reviewer verdict?" -> "Use superpowers:finishing-a-development-branch" [label="Ready to merge"];
+    "Final reviewer verdict?" -> "Surface verdict to user, ASK how to proceed" [label="No / With fixes"];
 }
 ```
+
+### Per-Task Reviewer Gate
+
+After the implementer reports DONE, dispatch all three reviewers **in parallel** (single message with three Agent tool uses):
+
+1. **Spec compliance reviewer** — uses `./spec-reviewer-prompt.md` (model: opus)
+2. **Code quality reviewer** — uses `./code-quality-reviewer-prompt.md` (model: opus)
+3. **Audit-simple reviewer** — uses `./audit-reviewer-prompt.md`, scoped to this task's commits (model: opus)
+
+Each reviewer returns ✅ or ❌. The task is complete only when **all three** return ✅.
+
+For each ❌, dispatch the implementer to fix that reviewer's findings, then re-dispatch **only** the reviewer that found issues. Do not re-run reviewers that already approved — this saves cost and avoids cascading revalidation.
+
+### Final Code Review
+
+After every task in the plan has passed its per-task gate, dispatch a final code reviewer subagent for the entire implementation. Use the `superpowers:requesting-code-review` template (`code-reviewer.md`) — this gives a holistic Strengths / Issues (Critical/Important/Minor) / Recommendations / **Ready to merge** verdict, which the per-task gates and audit-simple don't produce.
+
+Final code reviewer model: `opus`.
+
+1. Dispatch with BASE_SHA = branch base, HEAD_SHA = current HEAD.
+2. **Verdict "Ready to merge: Yes" →** invoke `superpowers:finishing-a-development-branch`.
+3. **Verdict "No" or "With fixes", or any Critical issues →** STOP. Surface the verdict and Critical/Important issues to the user verbatim and ASK how to proceed (fix now / track in a follow-up / stop). Do not silently proceed.
+
+**Never** invoke `finishing-a-development-branch` while the final reviewer flagged Critical issues without explicit user approval to proceed.
 
 ## Model Selection
 
 Use the least powerful model that can handle each role to conserve cost and increase speed.
 
+**Reviewer subagents (spec compliance, code quality, audit-simple, final code reviewer):** always `model: "opus"` — reviewer signal quality compounds across the per-task and final gates, so the model is pinned regardless of task complexity.
+
 **Mechanical implementation tasks** (isolated functions, clear specs, 1-2 files): use a fast, cheap model. Most implementation tasks are mechanical when the plan is well-specified.
 
 **Integration and judgment tasks** (multi-file coordination, pattern matching, debugging): use a standard model.
 
-**Architecture, design, and review tasks**: use the most capable available model.
+**Architecture and design tasks**: use the most capable available model.
 
 **Task complexity signals:**
 - Touches 1-2 files with a complete spec → cheap model
@@ -105,7 +129,7 @@ Use the least powerful model that can handle each role to conserve cost and incr
 
 Implementer subagents report one of four statuses. Handle each appropriately:
 
-**DONE:** Proceed to spec compliance review.
+**DONE:** Proceed to the per-task reviewer gate (dispatch all three reviewers in parallel).
 
 **DONE_WITH_CONCERNS:** The implementer completed the work but flagged doubts. Read the concerns before proceeding. If the concerns are about correctness or scope, address them before review. If they're observations (e.g., "this file is getting large"), note them and proceed to review.
 
@@ -122,8 +146,10 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 ## Prompt Templates
 
 - `./implementer-prompt.md` - Dispatch implementer subagent
-- `./spec-reviewer-prompt.md` - Dispatch spec compliance reviewer subagent
-- `./code-quality-reviewer-prompt.md` - Dispatch code quality reviewer subagent
+- `./spec-reviewer-prompt.md` - Dispatch spec compliance reviewer subagent (model: opus)
+- `./code-quality-reviewer-prompt.md` - Dispatch code quality reviewer subagent (model: opus)
+- `./audit-reviewer-prompt.md` - Dispatch per-task audit-simple reviewer subagent (model: opus)
+- Final code reviewer uses `superpowers:requesting-code-review` template (`code-reviewer.md`) — model: opus
 
 ## Example Workflow
 
@@ -150,11 +176,10 @@ Implementer: "Got it. Implementing now..."
   - Self-review: Found I missed --force flag, added it
   - Committed
 
-[Dispatch spec compliance reviewer]
-Spec reviewer: ✅ Spec compliant - all requirements met, nothing extra
-
-[Get git SHAs, dispatch code quality reviewer]
-Code reviewer: Strengths: Good test coverage, clean. Issues: None. Approved.
+[Dispatch 3 reviewers IN PARALLEL — spec, code quality, audit-simple]
+Spec reviewer:  ✅ Spec compliant - all requirements met, nothing extra
+Code reviewer:  ✅ Strengths: Good test coverage, clean. Issues: None. Approved.
+Audit reviewer: ✅ No critical issues
 
 [Mark Task 1 complete]
 
@@ -170,24 +195,18 @@ Implementer:
   - Self-review: All good
   - Committed
 
-[Dispatch spec compliance reviewer]
+[Dispatch 3 reviewers IN PARALLEL]
 Spec reviewer: ❌ Issues:
   - Missing: Progress reporting (spec says "report every 100 items")
   - Extra: Added --json flag (not requested)
-
-[Implementer fixes issues]
-Implementer: Removed --json flag, added progress reporting
-
-[Spec reviewer reviews again]
-Spec reviewer: ✅ Spec compliant now
-
-[Dispatch code quality reviewer]
 Code reviewer: Strengths: Solid. Issues (Important): Magic number (100)
+Audit reviewer: ✅ No critical issues
 
-[Implementer fixes]
-Implementer: Extracted PROGRESS_INTERVAL constant
+[Implementer fixes spec + code-quality issues]
+Implementer: Removed --json flag, added progress reporting, extracted PROGRESS_INTERVAL constant
 
-[Code reviewer reviews again]
+[Re-dispatch ONLY spec & code-quality reviewers — audit already approved]
+Spec reviewer: ✅ Spec compliant now
 Code reviewer: ✅ Approved
 
 [Mark Task 2 complete]
@@ -201,6 +220,8 @@ Final reviewer: All requirements met, ready to merge
 Done!
 ```
 
+If the final reviewer instead returns Critical issues or "Ready to merge: No / With fixes", surface the verdict and Critical/Important issues to the user and ASK how to proceed (fix now / track in a follow-up / stop) before invoking `finishing-a-development-branch`.
+
 ## Advantages
 
 **vs. Manual execution:**
@@ -213,6 +234,7 @@ Done!
 - Same session (no handoff)
 - Continuous progress (no waiting)
 - Review checkpoints automatic
+- Final code review with user approval gate on critical issues
 
 **Efficiency gains:**
 - No file reading overhead (controller provides full text)
@@ -222,13 +244,13 @@ Done!
 
 **Quality gates:**
 - Self-review catches issues before handoff
-- Two-stage review: spec compliance, then code quality
-- Review loops ensure fixes actually work
-- Spec compliance prevents over/under-building
-- Code quality ensures implementation is well-built
+- Per-task gate runs three reviewers in parallel: spec compliance, code quality, audit-simple
+- Final code review before finishing produces a holistic Strengths/Issues/Verdict
+- Critical issues at the final review require explicit user approval — no silent ship
 
 **Cost:**
-- More subagent invocations (implementer + 2 reviewers per task)
+- More subagent invocations (implementer + 3 parallel reviewers per task + final code reviewer)
+- Reviewer model is pinned to opus
 - Controller does more prep work (extracting all tasks upfront)
 - Review loops add iterations
 - But catches issues early (cheaper than debugging later)
@@ -237,28 +259,37 @@ Done!
 
 **Never:**
 - Start implementation on main/master branch without explicit user consent
-- Skip reviews (spec compliance OR code quality)
+- Skip any of the three per-task reviewers (spec, code quality, audit-simple)
+- Run the three reviewers sequentially when they can be dispatched in parallel
+- Re-dispatch all three reviewers after fixing a single reviewer's finding (only re-run the failing one)
 - Proceed with unfixed issues
 - Dispatch multiple implementation subagents in parallel (conflicts)
 - Make subagent read plan file (provide full text instead)
 - Skip scene-setting context (subagent needs to understand where task fits)
 - Ignore subagent questions (answer before letting them proceed)
-- Accept "close enough" on spec compliance (spec reviewer found issues = not done)
+- Accept "close enough" on any reviewer (any reviewer found issues = not done)
 - Skip review loops (reviewer found issues = implementer fixes = review again)
 - Let implementer self-review replace actual review (both are needed)
-- **Start code quality review before spec compliance is ✅** (wrong order)
-- Move to next task while either review has open issues
+- Move to next task while any reviewer has open issues
+- Skip the final code review before finishing-a-development-branch
+- Invoke finishing-a-development-branch with unresolved Critical issues without explicit user approval
+- Silently proceed when the final reviewer says "No" or "With fixes" — surface the verdict and ASK
 
 **If subagent asks questions:**
 - Answer clearly and completely
 - Provide additional context if needed
 - Don't rush them into implementation
 
-**If reviewer finds issues:**
-- Implementer (same subagent) fixes them
-- Reviewer reviews again
+**If a reviewer finds issues:**
+- Implementer (same subagent or fresh dispatch) fixes them
+- Re-dispatch only that reviewer
 - Repeat until approved
 - Don't skip the re-review
+
+**If the final code reviewer flags Critical issues or returns "No / With fixes":**
+- Surface verdict and Critical/Important issues to the user verbatim
+- ASK how to proceed (fix now / follow-up ticket / stop)
+- Do not invoke finishing-a-development-branch without explicit approval
 
 **If subagent fails task:**
 - Dispatch fix subagent with specific instructions
@@ -269,8 +300,9 @@ Done!
 **Required workflow skills:**
 - **superpowers:using-git-worktrees** - Ensures isolated workspace (creates one or verifies existing)
 - **superpowers:writing-plans** - Creates the plan this skill executes
-- **superpowers:requesting-code-review** - Code review template for reviewer subagents
-- **superpowers:finishing-a-development-branch** - Complete development after all tasks
+- **superpowers:requesting-code-review** - Code review template for the per-task code-quality reviewer and the final code reviewer
+- **audit-simple** - Per-task critical-only audit gate (one of the three parallel reviewers)
+- **superpowers:finishing-a-development-branch** - Complete development after all tasks (after the final code reviewer says Ready to merge, or user explicitly approves proceeding despite Critical issues)
 
 **Subagents should use:**
 - **superpowers:test-driven-development** - Subagents follow TDD for each task
