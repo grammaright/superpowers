@@ -23,6 +23,8 @@ Task tool (general-purpose):
     | Clarity | Requirements ambiguous enough to cause someone to build the wrong thing |
     | Scope | Focused enough for a single plan — not covering multiple independent subsystems |
     | YAGNI | Unrequested features, over-engineering |
+    | Design coverage | For non-trivial changes (multiple components, new boundaries, or non-obvious data flow): at least one of *architecture*, *components*, *data flow*, or *error handling* is present AND shown visually (diagram, sequence chart, styled HTML table, or other visual element). Skip when the change is truly trivial (single-file edit, no new boundaries). |
+    | Schema coverage | If the change touches a DB schema, an API contract, or a data processing format: the corresponding view is present — DB before/after (added/dropped/altered columns), API request/response shapes with status codes, or input → output record format. Skip when no schemas or contracts move. |
 
     ## Calibration
 

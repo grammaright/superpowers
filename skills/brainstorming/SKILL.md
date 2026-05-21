@@ -26,7 +26,7 @@ You MUST create a task for each of these items and complete them in order:
 3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
 4. **Propose 2-3 approaches** — with trade-offs and your recommendation
 5. **Present design** — in sections scaled to their complexity, get user approval after each section
-6. **Write design doc** — save to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and commit
+6. **Write design doc** — save as HTML to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.html`, open it in the browser, and commit
 7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
 8. **User reviews written spec** — ask user to review the spec file before proceeding
 9. **Transition to implementation** — invoke writing-plans skill to create implementation plan
@@ -88,7 +88,13 @@ digraph brainstorming {
 - Once you believe you understand what you're building, present the design
 - Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
 - Ask after each section whether it looks right so far
-- Cover: architecture, components, data flow, error handling, testing
+- Cover the spec content, each scaled to complexity:
+  - **Requirements** — what must be true when the work is done. Group as subsections. Under each requirement, write a **Behavior** as a user story: step-by-step what the user/client experiences. Include edge cases as observable outcomes ("if X happens → Y is shown / values are preserved / no request is sent"). Tag edges briefly so they can be referenced later (e.g. *empty-title*, *network-fail*).
+  - **Out of scope** — what this explicitly does not change.
+  - **Design** — required for non-trivial changes (anything touching multiple components, introducing new boundaries, or with non-obvious data flow). Include at least one of: *architecture*, *components*, *data flow*, *error handling*. The agent picks which slice(s) matter most — you do not need all four. Present this **visually** using HTML — inline SVG, pre-rendered diagrams, boxes-and-arrows, sequence diagrams, or styled tables. Omit only for truly trivial single-file edits.
+  - **Schema** — required whenever the change touches a schema or contract. If the **DB schema** changes, show before/after (new tables, added/dropped/altered columns) as a side-by-side or diff-style HTML table. If an **API** changes, show request/response shapes and status codes (HTML tables or code blocks). If a **data processing** step changes, show the input → output record format. The schema view is mandatory whenever schemas move; the format is your choice.
+  - **Testing** — what to verify (the WHAT, not the HOW).
+- No strict template — the shape of each section (markup, structure, diagrams) is up to the agent. Items above are required content where their condition applies; everything else is guidance.
 - Be ready to go back and clarify if something doesn't make sense
 
 **Design for isolation and clarity:**
@@ -108,8 +114,10 @@ digraph brainstorming {
 
 **Documentation:**
 
-- Write the validated design (spec) to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
+- Write the validated design (spec) as an HTML file at `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.html`
   - (User preferences for spec location override this default)
+  - Use semantic HTML with minimal inline CSS for readability (sectioned headings, lists). No strict template — fit the markup to the spec content.
+- After writing, open the file in the user's default browser (`open <path>` on macOS, `xdg-open <path>` on Linux) so the user can review it visually
 - Use elements-of-style:writing-clearly-and-concisely skill if available
 - Commit the design document to git
 
